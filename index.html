@@ -12,6 +12,10 @@
   .bar { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; }
   button, label.btn { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:8px 14px; font-size:.95rem; cursor:pointer; }
   #status { font-size:.85rem; opacity:.8; margin:6px 0; }
+  #prog { display:none; margin:6px 0 10px; }
+  #prog .track { height:10px; background:var(--card); border-radius:6px; overflow:hidden; }
+  #prog .fill { height:100%; width:0; background:var(--accent); transition:width .15s; }
+  #prog .label { font-size:.8rem; opacity:.8; margin-top:4px; word-break:break-all; }
   #screen_container { background:#000; display:inline-block; max-width:100%; overflow:auto; border-radius:8px; }
   #screen_container div { white-space:pre; font:14px monospace; line-height:14px; }
   #screen_container canvas { display:none; }
@@ -28,6 +32,7 @@
   <button id="reset">リセット</button>
 </div>
 <div id="status">待機中</div>
+<div id="prog"><div class="track"><div class="fill" id="fill"></div></div><div class="label" id="plabel"></div></div>
 <div id="screen_container">
   <div></div>
   <canvas></canvas>
@@ -56,7 +61,33 @@ function boot(extra) {
     vga_bios: { url: BASE + "bios/vgabios.bin" },
     autostart: true,
   }, extra));
-  emu.add_listener("emulator-ready", () => $("status").textContent = "実行中");
+  const prog = $("prog"), fill = $("fill"), plabel = $("plabel");
+  prog.style.display = "block"; fill.style.width = "0%"; plabel.textContent = "";
+  const mb = n => (n / 1048576).toFixed(1) + "MB";
+  emu.add_listener("download-progress", e => {
+    const name = (e.file_name || "").split("/").pop();
+    const step = "(" + (e.file_index + 1) + "/" + e.file_count + ") ";
+    if (e.lengthComputable && e.total) {
+      fill.style.width = Math.round(e.loaded / e.total * 100) + "%";
+      plabel.textContent = step + name + " " + mb(e.loaded) + " / " + mb(e.total);
+    } else {
+      plabel.textContent = step + name + " " + mb(e.loaded || 0);
+    }
+    $("status").textContent = "ダウンロード中…";
+  });
+  emu.add_listener("download-error", e => {
+    $("status").textContent = "ダウンロード失敗: " + ((e && e.file_name) || "");
+    prog.style.display = "none";
+  });
+  emu.add_listener("emulator-ready", () => {
+    fill.style.width = "100%";
+    $("status").textContent = "Linuxを起動中(ブートログが表示されます)…";
+  });
+  emu.add_listener("serial0-output-byte", function once() {
+    prog.style.display = "none";
+    $("status").textContent = "実行中";
+    emu.remove_listener("serial0-output-byte", once);
+  });
 }
 
 $("start").onclick = () => boot({
