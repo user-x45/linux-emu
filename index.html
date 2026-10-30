@@ -21,6 +21,13 @@
   #screen_container canvas { display:none; }
   textarea#kbd { position:absolute; opacity:0; height:1px; }
   .note { background:var(--card); padding:10px; border-radius:8px; font-size:.85rem; margin-top:10px; }
+
+  #osk { margin-top:10px; user-select:none; -webkit-user-select:none; touch-action:manipulation; }
+  #osk .row { display:flex; gap:4px; margin-bottom:4px; }
+  #osk .k { flex:1; min-width:0; padding:11px 0; background:var(--card); color:var(--fg); border-radius:7px; text-align:center; font:15px monospace; -webkit-tap-highlight-color:transparent; }
+  #osk .k:active { background:var(--accent); color:#fff; }
+  #osk .k.on { background:var(--accent); color:#fff; }
+  #osk .w2 { flex:2; } #osk .w5 { flex:5; }
 </style>
 </head>
 <body>
@@ -37,7 +44,7 @@
   <div></div>
   <canvas></canvas>
 </div>
-<textarea id="kbd"></textarea>
+<div id="osk"></div>
 <div class="note">
   デフォルトは軽量なBuildroot Linux(i386)です。ログインは <code>root</code>(パスワードなし)。
   「自分のイメージで起動」では、手元の bzImage か .iso を選べます。
@@ -120,7 +127,74 @@ $("file").onchange = e => {
              : { bzimage: { buffer: f }, cmdline: "tsc=reliable mitigations=off" });
 };
 
-$("kb").onclick = () => $("kbd").focus();
+// ---- 独自スクリーンキーボード ----
+const SC = {"1":2,"2":3,"3":4,"4":5,"5":6,"6":7,"7":8,"8":9,"9":10,"0":11,"-":12,"=":13,
+ q:16,w:17,e:18,r:19,t:20,y:21,u:22,i:23,o:24,p:25,"[":26,"]":27,
+ a:30,s:31,d:32,f:33,g:34,h:35,j:36,k:37,l:38,";":39,"'":40,
+ z:44,x:45,c:46,v:47,b:48,n:49,m:50,",":51,".":52,"/":53,"\\":43,"`":41};
+const SH = {"1":"!","2":"@","3":"#","4":"$","5":"%","6":"^","7":"&","8":"*","9":"(","0":")","-":"_","=":"+",
+ "[":"{","]":"}",";":":","'":'"',",":"<",".":">","/":"?","\\":"|","`":"~"};
+const SPECIAL = {esc:[1], tab:[15], bs:[14], enter:[28], space:[57],
+ up:[0xE0,0x48], down:[0xE0,0x50], left:[0xE0,0x4B], right:[0xE0,0x4D]};
+let shift = false, ctrl = false;
+
+function press(codes) {
+  if (!emu) return;
+  const mods = [];
+  if (ctrl) mods.push([0x1D]);
+  if (shift) mods.push([0x2A]);
+  const out = [];
+  mods.forEach(m => out.push(...m));
+  out.push(...codes);
+  // release: key first, then modifiers in reverse
+  const rel = codes[0] === 0xE0 ? [0xE0, codes[1] | 0x80] : [codes[0] | 0x80];
+  out.push(...rel);
+  mods.slice().reverse().forEach(m => out.push(m[0] | 0x80));
+  emu.keyboard_send_scancodes(out);
+  shift = false; ctrl = false; refreshOsk();
+}
+
+const rows = [
+  "1234567890-=".split(""),
+  "qwertyuiop".split(""),
+  "asdfghjkl;'".split(""),
+  "zxcvbnm,./".split(""),
+];
+const osk = $("osk");
+function mk(label, cls, fn, id) {
+  const b = document.createElement("div");
+  b.className = "k " + (cls || ""); b.textContent = label;
+  if (id) b.dataset.id = id;
+  b.addEventListener("pointerdown", e => { e.preventDefault(); fn(); });
+  return b;
+}
+function buildOsk() {
+  osk.innerHTML = "";
+  const mkRow = els => { const r = document.createElement("div"); r.className = "row"; els.forEach(x => r.appendChild(x)); osk.appendChild(r); };
+  mkRow([mk("Esc","",()=>press(SPECIAL.esc)), mk("Tab","",()=>press(SPECIAL.tab)),
+         mk("Ctrl","",()=>{ctrl=!ctrl;refreshOsk();},"ctrl"), mk("↑","",()=>press(SPECIAL.up)),
+         mk("⌫","",()=>press(SPECIAL.bs))]);
+  rows.forEach((r, i) => {
+    const els = r.map(ch => mk(ch, "", () => press([SC[ch]]), ch));
+    if (i === 3) els.unshift(mk("⇧","w2",()=>{shift=!shift;refreshOsk();},"shift"));
+    mkRow(els);
+  });
+  mkRow([mk("←","",()=>press(SPECIAL.left)), mk("↓","",()=>press(SPECIAL.down)), mk("→","",()=>press(SPECIAL.right)),
+         mk("Space","w5",()=>press(SPECIAL.space)), mk("Enter","w2",()=>press(SPECIAL.enter))]);
+  refreshOsk();
+}
+function refreshOsk() {
+  osk.querySelectorAll(".k").forEach(b => {
+    const id = b.dataset.id;
+    if (id === "shift") b.classList.toggle("on", shift);
+    else if (id === "ctrl") b.classList.toggle("on", ctrl);
+    else if (id && SC[id] !== undefined) {
+      b.textContent = shift ? (SH[id] || id.toUpperCase()) : id;
+    }
+  });
+}
+buildOsk();
+$("kb").onclick = () => { osk.style.display = osk.style.display === "none" ? "" : "none"; };
 $("reset").onclick = () => emu && emu.restart();
 </script>
 </body>
