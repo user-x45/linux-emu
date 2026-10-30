@@ -28,6 +28,41 @@
   #osk .k:active { background:var(--accent); color:#fff; }
   #osk .k.on { background:var(--accent); color:#fff; }
   #osk .w2 { flex:2; } #osk .w5 { flex:5; }
+
+  #stage { display:none; position:relative; background:#000; border-radius:8px; overflow:hidden; }
+  body.running #stage { display:block; }
+  #stage #screen_container { transform-origin:top left; border-radius:0; }
+  #splash { position:absolute; inset:0; background:#0d1117; color:#e6edf3; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:16px; text-align:center; transition:opacity .5s; z-index:5; }
+  #splash.hide { opacity:0; pointer-events:none; }
+  #splash .logo { font-size:56px; animation:bob 1.6s ease-in-out infinite; }
+  @keyframes bob { 50% { transform:translateY(-6px); } }
+  #splash .title { font-size:1.05rem; font-weight:600; }
+  #splash .msg { font-size:.9rem; opacity:.85; }
+  #splash .detail { font-size:.75rem; opacity:.55; min-height:1em; word-break:break-all; }
+  #splash .sbar { width:min(260px,70%); height:8px; background:#222b36; border-radius:5px; overflow:hidden; position:relative; }
+  #splash .sfill { height:100%; width:0; background:#58a6ff; border-radius:5px; transition:width .2s; }
+  #splash .sbar.indet .sfill { width:35%; position:absolute; animation:slide 1.2s ease-in-out infinite; }
+  @keyframes slide { 0% { left:-35%; } 100% { left:100%; } }
+  #quit { display:none; background:#8a8a8a; }
+  body.running #quit { display:inline-block; }
+  @media (max-width:700px) {
+    body.running { height:100dvh; padding:calc(env(safe-area-inset-top,0px) + 6px) 6px calc(env(safe-area-inset-bottom,0px) + 6px); display:flex; flex-direction:column; overflow:hidden; box-sizing:border-box; }
+    body.running h1, body.running .note, body.running #status, body.running #prog, body.running #start, body.running label.btn { display:none; }
+    body.running .bar { margin:0 0 6px; }
+    body.running .bar button { padding:6px 12px; }
+    body.running #stage { flex:1; min-height:0; }
+    body.running #osk { flex:1; min-height:0; display:flex; flex-direction:column; margin-top:6px; }
+    body.running #osk .row { flex:1; margin-bottom:4px; }
+    body.running #osk .k { display:flex; align-items:center; justify-content:center; padding:0; }
+  }
+  *, *::before, *::after { box-sizing:border-box; }
+  html, body { max-width:100%; overflow-x:hidden; }
+  #stage, #osk, .bar, .note { max-width:100%; }
+  @media (max-width:700px) {
+    body.running { overflow-x:hidden; overflow-y:auto; }
+    body.running #stage { min-height:150px; }
+    body.running #osk { min-height:200px; }
+  }
 </style>
 </head>
 <body>
@@ -37,12 +72,22 @@
   <label class="btn">自分のイメージで起動<input id="file" type="file" hidden></label>
   <button id="kb">キーボード</button>
   <button id="reset">リセット</button>
+  <button id="quit">終了</button>
 </div>
 <div id="status">待機中</div>
 <div id="prog"><div class="track"><div class="fill" id="fill"></div></div><div class="label" id="plabel"></div></div>
-<div id="screen_container">
-  <div></div>
-  <canvas></canvas>
+<div id="stage">
+  <div id="screen_container">
+    <div></div>
+    <canvas></canvas>
+  </div>
+  <div id="splash">
+    <div class="logo">🐧</div>
+    <div class="title">Linuxを起動しています</div>
+    <div class="sbar indet" id="sbar"><div class="sfill" id="sfill"></div></div>
+    <div class="msg" id="smsg">準備中…</div>
+    <div class="detail" id="sdetail"></div>
+  </div>
 </div>
 <div id="osk"></div>
 <div class="note">
@@ -59,6 +104,8 @@ let emu = null;
 function boot(extra) {
   if (emu) { emu.destroy(); emu = null; }
   $("status").textContent = "起動中…(初回は数MBのダウンロードがあります)";
+  document.body.classList.add("running");
+  showSplash();
   emu = new V86(Object.assign({
     wasm_path: "https://cdn.jsdelivr.net/npm/v86@0.5.472/build/v86.wasm",
     memory_size: 128 * 1024 * 1024,
@@ -68,6 +115,28 @@ function boot(extra) {
     vga_bios: { url: "bios/vgabios.bin" },
     autostart: true,
   }, extra));
+  emu.add_listener("download-progress", e => {
+    const name = (e.file_name || "").split("/").pop();
+    const mbs = n => (n / 1048576).toFixed(1) + "MB";
+    setSplash("ファイルを準備中…", name + " " + mbs(e.loaded || 0) + (e.total ? " / " + mbs(e.total) : ""));
+    if (e.lengthComputable && e.total) {
+      $("sbar").classList.remove("indet");
+      $("sfill").style.width = Math.round(e.loaded / e.total * 100) + "%";
+    } else { $("sbar").classList.add("indet"); }
+  });
+  emu.add_listener("download-error", e => {
+    stopWatch(); $("splash").classList.add("hide");
+    document.body.classList.remove("running");
+  });
+  emu.add_listener("emulator-ready", () => {
+    $("sbar").classList.add("indet"); $("sfill").style.width = "";
+    setSplash("カーネルを起動中…", "");
+  });
+  emu.add_listener("screen-put-char", d => {
+    const r = d[0], c = d[1];
+    (screenRows[r] || (screenRows[r] = []))[c] = String.fromCharCode(d[2]);
+  });
+  startWatch();
   const prog = $("prog"), fill = $("fill"), plabel = $("plabel");
   prog.style.display = "block"; fill.style.width = "0%"; plabel.textContent = "";
   const mb = n => (n / 1048576).toFixed(1) + "MB";
@@ -173,7 +242,7 @@ function buildOsk() {
   const mkRow = els => { const r = document.createElement("div"); r.className = "row"; els.forEach(x => r.appendChild(x)); osk.appendChild(r); };
   mkRow([mk("Esc","",()=>press(SPECIAL.esc)), mk("Tab","",()=>press(SPECIAL.tab)),
          mk("Ctrl","",()=>{ctrl=!ctrl;refreshOsk();},"ctrl"), mk("↑","",()=>press(SPECIAL.up)),
-         mk("⌫","",()=>press(SPECIAL.bs))]);
+         mk("⌫","",()=>press(SPECIAL.bs)), mk("\\","",()=>press([SC["\\"]]),"\\")]);
   rows.forEach((r, i) => {
     const els = r.map(ch => mk(ch, "", () => press([SC[ch]]), ch));
     if (i === 3) els.unshift(mk("⇧","w2",()=>{shift=!shift;refreshOsk();},"shift"));
@@ -195,7 +264,49 @@ function refreshOsk() {
 }
 buildOsk();
 $("kb").onclick = () => { osk.style.display = osk.style.display === "none" ? "" : "none"; };
-$("reset").onclick = () => emu && emu.restart();
+let screenRows = [], watchTimer = null, fitTimer = null, bootStart = 0;
+function setSplash(msg, detail) { $("smsg").textContent = msg; $("sdetail").textContent = detail || ""; }
+function showSplash() {
+  screenRows = []; bootStart = Date.now();
+  $("splash").classList.remove("hide");
+  $("sbar").classList.add("indet"); $("sfill").style.width = "";
+  setSplash("準備中…", "");
+}
+function stopWatch() { clearInterval(watchTimer); watchTimer = null; }
+function startWatch() {
+  stopWatch();
+  watchTimer = setInterval(() => {
+    const text = screenRows.map(r => (r || []).join("")).join("\n");
+    const done = /login:/.test(text) || /^.*# *$/m.test(text);
+    if (done || Date.now() - bootStart > 90000) {
+      stopWatch(); $("splash").classList.add("hide"); $("status").textContent = "実行中";
+    } else if (text.trim().length > 0) {
+      setSplash("システムを初期化中…", "");
+    }
+  }, 500);
+}
+function fit() {
+  const st = $("stage"), sc = $("screen_container");
+  if (!document.body.classList.contains("running")) { sc.style.transform = ""; return; }
+  const w = sc.offsetWidth, h = sc.offsetHeight;
+  if (!w || !h) return;
+  const mobile = matchMedia("(max-width:700px)").matches;
+  let k, y = 0;
+  if (mobile) {            // 上半分に収める(縦横どちらも)
+    k = Math.min(st.clientWidth / w, st.clientHeight / h);
+    y = (st.clientHeight - h * k) / 2;
+    st.style.height = "";
+  } else {                 // 横幅に合わせて縮小し、高さは内容に合わせる
+    k = Math.min(1, st.clientWidth / w);
+    st.style.height = Math.ceil(h * k) + "px";
+  }
+  const x = (st.clientWidth - w * k) / 2;
+  sc.style.transform = "translate(" + x + "px," + y + "px) scale(" + k + ")";
+}
+fitTimer = setInterval(fit, 400);
+addEventListener("resize", fit);
+$("reset").onclick = () => { if (!emu) return; emu.restart(); showSplash(); startWatch(); };
+$("quit").onclick = () => location.reload();
 </script>
 </body>
 </html>
