@@ -31,7 +31,9 @@
 
   #stage { display:none; position:relative; background:#000; border-radius:8px; overflow:hidden; }
   body.running #stage { display:block; }
-  #stage #screen_container { transform-origin:top left; border-radius:0; }
+  #stage #screen_container { transform-origin:top left; border-radius:0; max-width:none; overflow:visible; display:block; width:max-content; }
+  #stage { touch-action:none; }
+  html { overscroll-behavior-x:none; }
   #splash { position:absolute; inset:0; background:#0d1117; color:#e6edf3; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:16px; text-align:center; transition:opacity .5s; z-index:5; }
   #splash.hide { opacity:0; pointer-events:none; }
   #splash .logo { font-size:56px; animation:bob 1.6s ease-in-out infinite; }
@@ -138,6 +140,7 @@ function boot(extra) {
     const r = d[0], c = d[1];
     (screenRows[r] || (screenRows[r] = []))[c] = String.fromCharCode(d[2]);
     lastChange = Date.now();
+    if (!chkPending) { chkPending = true; setTimeout(() => { chkPending = false; checkNow(); }, 80); }
   });
   startWatch();
   const prog = $("prog"), fill = $("fill"), plabel = $("plabel");
@@ -277,14 +280,30 @@ function showSplash() {
   setSplash("準備中…", "");
 }
 function stopWatch() { clearInterval(watchTimer); watchTimer = null; }
+let chkPending = false;
+function screenText() {
+  try {
+    if (emu && emu.screen_adapter && emu.screen_adapter.get_text_screen)
+      return emu.screen_adapter.get_text_screen().join("\n");
+  } catch (e) {}
+  return screenRows.map(r => (r || []).join("")).join("\n");
+}
+function finishBoot() {
+  stopWatch(); $("splash").classList.add("hide"); $("status").textContent = "実行中";
+}
+function checkNow() {
+  if (!watchTimer) return;
+  const t = screenText();
+  if (/login:/.test(t) || /^.*# *$/m.test(t)) finishBoot();
+}
 function startWatch() {
   stopWatch();
   watchTimer = setInterval(() => {
-    const text = screenRows.map(r => (r || []).join("")).join("\n");
+    const text = screenText();
     const done = /login:/.test(text) || /^.*# *$/m.test(text);
     const idle = text.trim().length > 0 && lastChange && Date.now() - lastChange > 6000 && Date.now() - bootStart > 10000;
     if (done || idle || Date.now() - bootStart > 90000) {
-      stopWatch(); $("splash").classList.add("hide"); $("status").textContent = "実行中";
+      finishBoot();
     } else if (text.trim().length > 0) {
       setSplash("システムを初期化中…", "");
     }
