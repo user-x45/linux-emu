@@ -43,8 +43,9 @@
   #splash .sfill { height:100%; width:0; background:#58a6ff; border-radius:5px; transition:width .2s; }
   #splash .sbar.indet .sfill { width:35%; position:absolute; animation:slide 1.2s ease-in-out infinite; }
   @keyframes slide { 0% { left:-35%; } 100% { left:100%; } }
-  #quit { display:none; background:#8a8a8a; }
-  body.running #quit { display:inline-block; }
+  #quit, #peek { display:none; background:#8a8a8a; }
+  #splash.peek { opacity:0; pointer-events:none; }
+  body.running #quit, body.running #peek { display:inline-block; }
   @media (max-width:700px) {
     body.running { height:100dvh; padding:calc(env(safe-area-inset-top,0px) + 6px) 6px calc(env(safe-area-inset-bottom,0px) + 6px); display:flex; flex-direction:column; overflow:hidden; box-sizing:border-box; }
     body.running h1, body.running .note, body.running #status, body.running #prog, body.running #start, body.running label.btn { display:none; }
@@ -72,6 +73,7 @@
   <label class="btn">自分のイメージで起動<input id="file" type="file" hidden></label>
   <button id="kb">キーボード</button>
   <button id="reset">リセット</button>
+  <button id="peek">ログ</button>
   <button id="quit">終了</button>
 </div>
 <div id="status">待機中</div>
@@ -135,6 +137,7 @@ function boot(extra) {
   emu.add_listener("screen-put-char", d => {
     const r = d[0], c = d[1];
     (screenRows[r] || (screenRows[r] = []))[c] = String.fromCharCode(d[2]);
+    lastChange = Date.now();
   });
   startWatch();
   const prog = $("prog"), fill = $("fill"), plabel = $("plabel");
@@ -264,10 +267,11 @@ function refreshOsk() {
 }
 buildOsk();
 $("kb").onclick = () => { osk.style.display = osk.style.display === "none" ? "" : "none"; };
-let screenRows = [], watchTimer = null, fitTimer = null, bootStart = 0;
+let screenRows = [], watchTimer = null, fitTimer = null, bootStart = 0, lastChange = 0;
 function setSplash(msg, detail) { $("smsg").textContent = msg; $("sdetail").textContent = detail || ""; }
 function showSplash() {
-  screenRows = []; bootStart = Date.now();
+  screenRows = []; bootStart = Date.now(); lastChange = 0;
+  $("splash").classList.remove("peek");
   $("splash").classList.remove("hide");
   $("sbar").classList.add("indet"); $("sfill").style.width = "";
   setSplash("準備中…", "");
@@ -278,7 +282,8 @@ function startWatch() {
   watchTimer = setInterval(() => {
     const text = screenRows.map(r => (r || []).join("")).join("\n");
     const done = /login:/.test(text) || /^.*# *$/m.test(text);
-    if (done || Date.now() - bootStart > 90000) {
+    const idle = text.trim().length > 0 && lastChange && Date.now() - lastChange > 6000 && Date.now() - bootStart > 10000;
+    if (done || idle || Date.now() - bootStart > 90000) {
       stopWatch(); $("splash").classList.add("hide"); $("status").textContent = "実行中";
     } else if (text.trim().length > 0) {
       setSplash("システムを初期化中…", "");
@@ -307,6 +312,7 @@ fitTimer = setInterval(fit, 400);
 addEventListener("resize", fit);
 $("reset").onclick = () => { if (!emu) return; emu.restart(); showSplash(); startWatch(); };
 $("quit").onclick = () => location.reload();
+$("peek").onclick = () => $("splash").classList.toggle("peek");
 </script>
 </body>
 </html>
