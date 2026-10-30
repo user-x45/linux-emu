@@ -45,7 +45,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/v86@0.5.472/build/libv86.js"></script>
 <script>
-const BASE = "https://copy.sh/v86/";   // 自分でホストする場合は同じ階層にファイルを置いて "" に変更
+const IMG = "images/buildroot-bzimage68.bin";
 const $ = id => document.getElementById(id);
 let emu = null;
 
@@ -101,13 +101,13 @@ async function check(urls) {
 
 $("start").onclick = async () => {
   $("status").textContent = "ファイルを確認中…";
-  const bad = await check(["bios/seabios.bin", "bios/vgabios.bin", BASE + "images/buildroot-bzimage68.bin"]);
+  const bad = await check(["bios/seabios.bin", "bios/vgabios.bin", IMG]);
   if (bad) {
-    $("status").textContent = "❌ " + bad + "。Safariで " + BASE + "images/buildroot-bzimage68.bin を保存し、「自分のイメージで起動」から選んでください。";
+    $("status").textContent = "❌ " + bad + "。Safariで " + IMG + " を保存し、「自分のイメージで起動」から選んでください。";
     return;
   }
   boot({
-  bzimage: { url: BASE + "images/buildroot-bzimage68.bin" },
+  bzimage: { url: IMG },
   cmdline: "tsc=reliable mitigations=off random.trust_cpu=on",
   });
 };
