@@ -57,8 +57,8 @@ function boot(extra) {
     memory_size: 128 * 1024 * 1024,
     vga_memory_size: 8 * 1024 * 1024,
     screen_container: $("screen_container"),
-    bios: { url: BASE + "bios/seabios.bin" },
-    vga_bios: { url: BASE + "bios/vgabios.bin" },
+    bios: { url: "bios/seabios.bin" },
+    vga_bios: { url: "bios/vgabios.bin" },
     autostart: true,
   }, extra));
   const prog = $("prog"), fill = $("fill"), plabel = $("plabel");
@@ -90,13 +90,31 @@ function boot(extra) {
   });
 }
 
-$("start").onclick = () => boot({
+async function check(urls) {
+  for (const u of urls) {
+    try { const r = await fetch(u, { method: "GET", headers: { Range: "bytes=0-0" } });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+    } catch (err) { return u + " を取得できません(" + err.message + ")"; }
+  }
+  return null;
+}
+
+$("start").onclick = async () => {
+  $("status").textContent = "ファイルを確認中…";
+  const bad = await check(["bios/seabios.bin", "bios/vgabios.bin", BASE + "images/buildroot-bzimage68.bin"]);
+  if (bad) {
+    $("status").textContent = "❌ " + bad + "。Safariで " + BASE + "images/buildroot-bzimage68.bin を保存し、「自分のイメージで起動」から選んでください。";
+    return;
+  }
+  boot({
   bzimage: { url: BASE + "images/buildroot-bzimage68.bin" },
   cmdline: "tsc=reliable mitigations=off random.trust_cpu=on",
-});
+  });
+};
 
 $("file").onchange = e => {
   const f = e.target.files[0]; if (!f) return;
+  fetch("bios/seabios.bin").then(r => { if (!r.ok) throw 0; }).catch(() => { $("status").textContent = "❌ bios/seabios.bin がありません。biosフォルダも一緒にアップロードしてください。"; });
   const isIso = /\.iso$/i.test(f.name);
   boot(isIso ? { cdrom: { buffer: f } }
              : { bzimage: { buffer: f }, cmdline: "tsc=reliable mitigations=off" });
