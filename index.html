@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Linux in your browser</title>
+<style>
+  :root { --bg:#fff; --fg:#1a1a1a; --card:#f3f3f1; --accent:#2f6fed; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141414; --fg:#eee; --card:#222; --accent:#7aa2ff; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font-family:system-ui,sans-serif; }
+  h1 { font-size:1.2rem; margin:0 0 8px; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; }
+  button, label.btn { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:8px 14px; font-size:.95rem; cursor:pointer; }
+  #status { font-size:.85rem; opacity:.8; margin:6px 0; }
+  #screen_container { background:#000; display:inline-block; max-width:100%; overflow:auto; border-radius:8px; }
+  #screen_container div { white-space:pre; font:14px monospace; line-height:14px; }
+  #screen_container canvas { display:none; }
+  textarea#kbd { position:absolute; opacity:0; height:1px; }
+  .note { background:var(--card); padding:10px; border-radius:8px; font-size:.85rem; margin-top:10px; }
+</style>
+</head>
+<body>
+<h1>🐧 ブラウザで動く本物のLinux</h1>
+<div class="bar">
+  <button id="start">Linuxを起動</button>
+  <label class="btn">自分のイメージで起動<input id="file" type="file" hidden></label>
+  <button id="kb">キーボード</button>
+  <button id="reset">リセット</button>
+</div>
+<div id="status">待機中</div>
+<div id="screen_container">
+  <div></div>
+  <canvas></canvas>
+</div>
+<textarea id="kbd"></textarea>
+<div class="note">
+  デフォルトは軽量なBuildroot Linux(i386)です。ログインは <code>root</code>(パスワードなし)。
+  「自分のイメージで起動」では、手元の bzImage か .iso を選べます。
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/v86@0.5.472/build/libv86.js"></script>
+<script>
+const BASE = "https://copy.sh/v86/";   // 自分でホストする場合は同じ階層にファイルを置いて "" に変更
+const $ = id => document.getElementById(id);
+let emu = null;
+
+function boot(extra) {
+  if (emu) { emu.destroy(); emu = null; }
+  $("status").textContent = "起動中…(初回は数MBのダウンロードがあります)";
+  emu = new V86(Object.assign({
+    wasm_path: "https://cdn.jsdelivr.net/npm/v86@0.5.472/build/v86.wasm",
+    memory_size: 128 * 1024 * 1024,
+    vga_memory_size: 8 * 1024 * 1024,
+    screen_container: $("screen_container"),
+    bios: { url: BASE + "bios/seabios.bin" },
+    vga_bios: { url: BASE + "bios/vgabios.bin" },
+    autostart: true,
+  }, extra));
+  emu.add_listener("emulator-ready", () => $("status").textContent = "実行中");
+}
+
+$("start").onclick = () => boot({
+  bzimage: { url: BASE + "images/buildroot-bzimage68.bin" },
+  cmdline: "tsc=reliable mitigations=off random.trust_cpu=on",
+});
+
+$("file").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const isIso = /\.iso$/i.test(f.name);
+  boot(isIso ? { cdrom: { buffer: f } }
+             : { bzimage: { buffer: f }, cmdline: "tsc=reliable mitigations=off" });
+};
+
+$("kb").onclick = () => $("kbd").focus();
+$("reset").onclick = () => emu && emu.restart();
+</script>
+</body>
+</html>
