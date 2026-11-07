@@ -788,6 +788,8 @@ const B64={wasm:"AGFzbQEAAAABuwIuYAV/f39/fwBgAn9/AGADf39/AX9gAn9/AX9gA39/fwBgAX8
 const u8=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 const $=id=>document.getElementById(id);
 let emu=null;
+window.addEventListener('error',e=>setSt('エラー: '+(e.message||e)));
+window.addEventListener('unhandledrejection',e=>setSt('エラー: '+((e.reason&&e.reason.message)||e.reason)));
 function setSt(t){$("st").textContent=t}
 $("go").onclick=async()=>{
   if(emu){try{emu.destroy()}catch(e){}emu=null}
@@ -803,11 +805,12 @@ $("go").onclick=async()=>{
   };
   if(cd)cfg.cdrom={buffer:cd};
   if(hd)cfg.hda={buffer:hd};
-  else if(parseInt($("blank").value)>0)cfg.hda={size:parseInt($("blank").value)*1024*1024};
+  else if(parseInt($("blank").value)>0)cfg.hda={buffer:new ArrayBuffer(parseInt($("blank").value)*1024*1024)};
   if(fd)cfg.fda={buffer:fd};
   try{
     $("screen_container").style.display="block";
     emu=new V86(cfg);
+    emu.add_listener("screen-set-mode",m=>setSt("実行中（"+(m?"グラフィック":"テキスト")+"モード）。黒いままなら数十秒待ってください。"));
     emu.add_listener("emulator-started",()=>{setSt("実行中。画面をクリックでマウス操作。");["cad","fs","stop"].forEach(i=>$(i).disabled=false)});
   }catch(e){setSt("起動エラー: "+e.message)}
 };
