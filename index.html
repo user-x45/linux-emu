@@ -28,6 +28,7 @@ details{font-size:.85rem}
 <div class="card">
 <label>CD-ROMイメージ (.iso)　例: Windows 95/98/2000 のインストールCD</label><input type="file" id="cd" accept=".iso,.img,.bin">
 <label>ハードディスクイメージ (.img / .vhd 等のraw)</label><input type="file" id="hd">
+<label>HDDイメージを選ばない場合は、空のHDDを作成（インストール先）</label><select id="blank"><option value="0">作成しない</option><option value="512">512 MB</option><option value="1024" selected>1 GB</option><option value="2048">2 GB</option></select>
 <label>フロッピーイメージ (.img) 　例: 起動ディスク</label><input type="file" id="fd" accept=".img,.ima,.flp">
 <label>メモリ</label><select id="mem"><option value="64">64 MB（Win95/98向け）</option><option value="128" selected>128 MB</option><option value="256">256 MB（2000/XP向け）</option><option value="512">512 MB</option></select>
 <div class="row"><button id="go">▶ 起動</button><button class="g" id="cad" disabled>Ctrl+Alt+Del</button><button class="g" id="fs" disabled>全画面</button><button class="g" id="stop" disabled>■ 停止</button></div>
@@ -36,7 +37,7 @@ details{font-size:.85rem}
 <div id="screen_container"><div></div><canvas></canvas></div>
 <details class="card"><summary>使い方のヒント</summary>
 <ul><li>Win95/98はCDから起動→インストール、またはインストール済みのHDDイメージを読み込むと最速です。</li>
-<li>空のHDDイメージが必要な場合は <code>qemu-img create -f raw win.img 2G</code> などで作成できます。</li>
+<li>空のHDDは上の欄で作成できます。ただしブラウザを閉じると内容は消えます。Win9xは起動ディスクのfdisk→formatでパーティション作成後にセットアップします。</li>
 <li>マウスは画面クリックで取り込まれ、Escで解除されます。</li>
 <li>動作は実機よりかなり遅く、XP以降は非常に重いです。</li></ul></details>
 </main>
@@ -791,7 +792,7 @@ function setSt(t){$("st").textContent=t}
 $("go").onclick=async()=>{
   if(emu){try{emu.destroy()}catch(e){}emu=null}
   const cd=$("cd").files[0],hd=$("hd").files[0],fd=$("fd").files[0];
-  if(!cd&&!hd&&!fd){setSt("少なくとも1つイメージを選んでください。");return}
+  if(!cd&&!hd&&!fd&&parseInt($("blank").value)===0){setSt("少なくとも1つイメージを選んでください。");return}
   setSt("起動中…");
   const wasm=u8(B64.wasm), bios=u8(B64.bios).buffer, vga=u8(B64.vga).buffer;
   const cfg={
@@ -802,6 +803,7 @@ $("go").onclick=async()=>{
   };
   if(cd)cfg.cdrom={buffer:cd};
   if(hd)cfg.hda={buffer:hd};
+  else if(parseInt($("blank").value)>0)cfg.hda={size:parseInt($("blank").value)*1024*1024};
   if(fd)cfg.fda={buffer:fd};
   try{
     $("screen_container").style.display="block";
